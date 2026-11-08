@@ -1,0 +1,11 @@
+bin/
+data/
+*.log
+api*.out
+api*.err
+proto*.out
+proto*.err
+out*.log
+err*.log
+RUNNING.txt
+.env
