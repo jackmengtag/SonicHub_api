@@ -58,12 +58,12 @@ func Seed(ctx context.Context, db *sql.DB, adminPhone string) error {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO credit_accounts(tenant_id, available, reserved) VALUES($1,128,0)`, tenant); err != nil {
+			INSERT INTO credit_accounts(tenant_id, available, reserved) VALUES($1,100,0)`, tenant); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO credit_ledger(id, tenant_id, entry_type, amount, balance_after, idempotency_key, ref_type, ref_id)
-			VALUES($1,$2,'grant',128,128,$3,'grant',$4)`,
+			VALUES($1,$2,'grant',100,100,$3,'grant',$4)`,
 			"cl_grant_"+u.id, tenant, "grant:"+u.id, u.id); err != nil {
 			return err
 		}
@@ -247,10 +247,10 @@ func Seed(ctx context.Context, db *sql.DB, adminPhone string) error {
 		tag     string
 		sort    int
 	}{
-		{"p_100", 100, 600, "", 1},
-		{"p_300", 300, 1800, "省 10%", 2},
-		{"p_680", 680, 3000, "最热", 3},
-		{"p_1280", 1280, 5800, "省 25%", 4},
+		{"p_100", 60, 600, "", 1},
+		{"p_300", 180, 1800, "", 2},
+		{"p_680", 300, 3000, "最热", 3},
+		{"p_1280", 580, 5800, "", 4},
 	}
 	for _, p := range packages {
 		if _, err := tx.ExecContext(ctx, `

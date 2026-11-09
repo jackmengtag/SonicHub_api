@@ -11,21 +11,23 @@
 
 ## 已实现能力
 
-| 模块 | 能力 |
-|---|---|
-| 认证 | 手机号 + 验证码登录、自动注册、Refresh Token 轮换、退出登录 |
-| 用户 | 个人资料、兴趣偏好、个人租户、积分账户 |
-| 音乐人 | 认证申请、审核状态、音乐人主页、代表作 |
-| 社交 | 关注/取消关注、粉丝、互关朋友、拉黑 |
-| 作品 | 列表、详情、可见性、发布、删除、播放计数 |
-| 互动 | 点赞、收藏、评论、删除评论 |
-| 推荐 | 推荐流、关注流、广场（最新/热门/风格）、搜索、负反馈 |
-| 写歌 | 报价、积分冻结、异步生成、进度查询、SSE、取消、结果作品 |
-| 积分 | 套餐、充值（演示）、余额、不可变流水、失败/取消释放 |
-| 消息 | 通知列表、未读、全部已读、会话、私信、歌曲卡片 |
-| 分享 | 短链、可见性校验、落地页数据、分享事件、失效 |
-| 审核 | 机审、人工通过/驳回、举报、申诉、音乐人审核、推荐策略 |
-| 运维 | 健康检查、结构化日志、数据库迁移、演示种子数据 |
+<br />
+
+| 模块  | 能力                                     |
+| --- | -------------------------------------- |
+| 认证  | 手机号 + 验证码登录、自动注册、Refresh Token 轮换、退出登录 |
+| 用户  | 个人资料、兴趣偏好、个人租户、积分账户                    |
+| 音乐人 | 认证申请、审核状态、音乐人主页、代表作                    |
+| 社交  | 关注/取消关注、粉丝、互关朋友、拉黑                     |
+| 作品  | 列表、详情、可见性、发布、删除、播放计数                   |
+| 互动  | 点赞、收藏、评论、删除评论                          |
+| 推荐  | 推荐流、关注流、广场（最新/热门/风格）、搜索、负反馈            |
+| 写歌  | 报价（50 积分/首，即 5 元）、余额校验（不足返回 402）、积分冻结、异步生成、进度查询、SSE、取消、结果作品          |
+| 积分  | 注册赠送 100 积分、每日签到（+5/天）、分享奖励（同作品每日 +5）、充值（10 积分 = 1 元，额外每 1 元奖励 1 积分）、余额、不可变流水、失败/取消释放 |
+| 消息  | 通知列表、未读、全部已读、会话、私信、歌曲卡片                |
+| 分享  | 短链、可见性校验、落地页数据、分享事件、失效、分享奖励（同作品每日 +5 积分）                 |
+| 审核  | 机审、人工通过/驳回、举报、申诉、音乐人审核、推荐策略            |
+| 运维  | 健康检查、结构化日志、数据库迁移、演示种子数据                |
 
 ## 快速启动（Docker）
 
@@ -39,11 +41,11 @@ docker compose -f deploy/docker-compose.yml up --build
 
 ### 演示账号
 
-| 项目 | 值 |
-|---|---|
-| 手机号 | `13800138000` |
-| 验证码 | `1234` |
-| 角色 | 沈知，管理员，可访问审核工作台 |
+| 项目  | 值               |
+| --- | --------------- |
+| 手机号 | `13800138000`   |
+| 验证码 | `1234`          |
+| 角色  | 沈知，管理员，可访问审核工作台 |
 
 ## 本地运行
 
@@ -98,29 +100,30 @@ Worker 会生成一个可播放的 WAV，写入 `/media/generated/<generation-id
 
 ### 主要接口
 
-| 方法 | 路径 |
-|---|---|
-| POST | `/api/v1/auth/login`、`/auth/refresh`、`/auth/logout` |
-| GET/PUT | `/api/v1/me` |
-| GET | `/api/v1/feed/recommend`、`/feed/following`、`/plaza`、`/search` |
-| POST | `/api/v1/feed/feedback` |
-| POST/DELETE | `/api/v1/users/{id}/follow` |
-| GET | `/api/v1/me/following`、`/followers`、`/friends` |
-| GET | `/api/v1/musicians/{id}` |
-| POST | `/api/v1/musicians/applications` |
-| GET | `/api/v1/works`、`/works/{id}`、`/works/{id}/comments` |
-| POST | `/api/v1/works/{id}/like`、`/collect`、`/play`、`/comments`、`/publish` |
-| PUT | `/api/v1/works/{id}/visibility` |
-| POST | `/api/v1/credit/quotes`、`/credit/recharge` |
-| GET | `/api/v1/me/credits`、`/me/credits/ledger`、`/credit/packages` |
-| POST | `/api/v1/generations` |
-| GET | `/api/v1/generations/{id}`、`/generations/{id}/events`（SSE） |
-| GET | `/api/v1/notifications`、`/conversations`、`/conversations/{id}/messages` |
-| POST | `/api/v1/conversations/{id}/messages` |
-| POST | `/api/v1/share-links`、`/share-events` |
-| GET | `/api/v1/s/{code}`（公开落地页数据） |
-| POST | `/api/v1/reports`、`/appeals` |
-| GET | `/api/v1/admin/stats`、`/admin/moderation`、`/admin/reports`、`/admin/applications`、`/admin/appeals`、`/admin/feed-policy` |
+| 方法          | 路径                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| POST        | `/api/v1/auth/login`、`/auth/refresh`、`/auth/logout`                                                                    |
+| GET/PUT     | `/api/v1/me`                                                                                                           |
+| GET         | `/api/v1/feed/recommend`、`/feed/following`、`/plaza`、`/search`                                                          |
+| POST        | `/api/v1/feed/feedback`                                                                                                |
+| POST/DELETE | `/api/v1/users/{id}/follow`                                                                                            |
+| GET         | `/api/v1/me/following`、`/followers`、`/friends`                                                                         |
+| GET         | `/api/v1/musicians/{id}`                                                                                               |
+| POST        | `/api/v1/musicians/applications`                                                                                       |
+| GET         | `/api/v1/works`、`/works/{id}`、`/works/{id}/comments`                                                                   |
+| POST        | `/api/v1/works/{id}/like`、`/collect`、`/play`、`/comments`、`/publish`                                                    |
+| PUT         | `/api/v1/works/{id}/visibility`                                                                                        |
+| POST        | `/api/v1/credit/quotes`、`/credit/recharge`                                                                             |
+| GET/POST    | `/api/v1/checkins/status`、`/api/v1/checkins`（每日签到，赠 5 积分）                                                               |
+| GET         | `/api/v1/me/credits`、`/me/credits/ledger`、`/credit/packages`                                                           |
+| POST        | `/api/v1/generations`                                                                                                  |
+| GET         | `/api/v1/generations/{id}`、`/generations/{id}/events`（SSE）                                                             |
+| GET         | `/api/v1/notifications`、`/conversations`、`/conversations/{id}/messages`                                                |
+| POST        | `/api/v1/conversations/{id}/messages`                                                                                  |
+| POST        | `/api/v1/share-links`、`/share-events`                                                                                  |
+| GET         | `/api/v1/s/{code}`（公开落地页数据）                                                                                            |
+| POST        | `/api/v1/reports`、`/appeals`                                                                                           |
+| GET         | `/api/v1/admin/stats`、`/admin/moderation`、`/admin/reports`、`/admin/applications`、`/admin/appeals`、`/admin/feed-policy` |
 
 所有写接口返回 `{ "code": "OK", "message": "ok", "data": ... }`；错误返回对应 `code` 与 HTTP 状态码。
 
@@ -145,15 +148,15 @@ deploy/                      Dockerfile 与 Compose
 
 以下为 MVP 的明确取舍，生产化时按技术架构文档替换：
 
-| 项 | 当前实现 | 生产目标 |
-|---|---|---|
+| 项    | 当前实现                                                | 生产目标                         |
+| ---- | --------------------------------------------------- | ---------------------------- |
 | 任务队列 | PostgreSQL `generations` + `FOR UPDATE SKIP LOCKED` | Redis Streams + Outbox + DLQ |
-| 媒体存储 | 本地 `data/media` | S3 / MinIO，签名 URL |
-| 模型调用 | 内置 WAV 合成器模拟模型 | Python 音乐大模型 + Model Gateway |
-| 登录 | 固定演示验证码 `1234` | 短信/第三方登录 + 风控 |
-| 支付 | 直接入账（演示） | 支付渠道回调、对账、退款 |
-| 推荐 | SQL 热度排序 + 负反馈过滤 | 召回/排序服务、特征平台、A/B |
-| 消息推送 | 仅站内通知 | APNs / FCM / 厂商推送 |
+| 媒体存储 | 本地 `data/media`                                     | S3 / MinIO，签名 URL            |
+| 模型调用 | 内置 WAV 合成器模拟模型                                      | Python 音乐大模型 + Model Gateway |
+| 登录   | 固定演示验证码 `1234`                                      | 短信/第三方登录 + 风控                |
+| 支付   | 直接入账（演示）                                            | 支付渠道回调、对账、退款                 |
+| 推荐   | SQL 热度排序 + 负反馈过滤                                    | 召回/排序服务、特征平台、A/B             |
+| 消息推送 | 仅站内通知                                               | APNs / FCM / 厂商推送            |
 
 ## 测试
 
@@ -183,15 +186,16 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 
 ## 环境变量
 
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `HTTP_ADDR` | `:8080` | 监听地址 |
-| `DATABASE_URL` | 本地 sonichub | PostgreSQL DSN |
-| `JWT_SECRET` | 开发密钥 | 生产必须替换 |
-| `DEMO_AUTH_CODE` | `1234` | 演示验证码 |
-| `SEED_DEMO` | `true` | 空库时写入演示数据 |
-| `ADMIN_PHONE` | `13800138000` | 管理员手机号 |
-| `MEDIA_DIR` | `./data/media` | 媒体文件目录 |
-| `MIGRATIONS_DIR` | `./migrations` | 迁移目录 |
-| `ACCESS_TOKEN_MINUTES` | `1440` | Access Token 有效期 |
-| `REFRESH_TOKEN_DAYS` | `30` | Refresh Token 有效期 |
+| 变量                     | 默认值            | 说明                |
+| ---------------------- | -------------- | ----------------- |
+| `HTTP_ADDR`            | `:8080`        | 监听地址              |
+| `DATABASE_URL`         | 本地 sonichub    | PostgreSQL DSN    |
+| `JWT_SECRET`           | 开发密钥           | 生产必须替换            |
+| `DEMO_AUTH_CODE`       | `1234`         | 演示验证码             |
+| `SEED_DEMO`            | `true`         | 空库时写入演示数据         |
+| `ADMIN_PHONE`          | `13800138000`  | 管理员手机号            |
+| `MEDIA_DIR`            | `./data/media` | 媒体文件目录            |
+| `MIGRATIONS_DIR`       | `./migrations` | 迁移目录              |
+| `ACCESS_TOKEN_MINUTES` | `1440`         | Access Token 有效期  |
+| `REFRESH_TOKEN_DAYS`   | `30`           | Refresh Token 有效期 |
+

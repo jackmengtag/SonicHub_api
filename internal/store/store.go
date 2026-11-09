@@ -13,7 +13,13 @@ import (
 	"github.com/jackmengtag/SonicHub_api/internal/model"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound           = errors.New("not found")
+	ErrInsufficientCredit = errors.New("insufficient credit")
+)
+
+// NewUserCredits 是新用户注册时赠送的初始积分。
+const NewUserCredits int64 = 100
 
 type Store struct {
 	db *sql.DB
@@ -122,13 +128,13 @@ func (s *Store) CreateUser(ctx context.Context, phone, displayName string) (*Cre
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO credit_accounts(tenant_id, available, reserved) VALUES($1,128,0)`, tenantID); err != nil {
+		INSERT INTO credit_accounts(tenant_id, available, reserved) VALUES($1,$2,0)`, tenantID, NewUserCredits); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO credit_ledger(id, tenant_id, entry_type, amount, balance_after, idempotency_key, ref_type, ref_id)
-		VALUES($1,$2,'grant',128,128,$3,'grant',$4)`,
-		NewID("cl_"), tenantID, "grant:"+userID, userID); err != nil {
+		VALUES($1,$2,'grant',$3,$4,$5,'grant',$6)`,
+		NewID("cl_"), tenantID, NewUserCredits, NewUserCredits, "grant:"+userID, userID); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

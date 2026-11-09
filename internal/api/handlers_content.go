@@ -2,8 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -56,6 +61,103 @@ func (s *Server) myWorks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writePage(w, items, f.Offset, f.Limit)
+}
+
+// importWork 把外部音乐引擎生成的作品登记到主后端，使其出现在「我的作品」。
+// 请求为 multipart/form-data：title、genre、tags、duration_seconds、description 和音频文件 audio。
+func (s *Server) importWork(w http.ResponseWriter, r *http.Request) {
+	me, okUser := currentUser(w, r)
+	if !okUser {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		fail(w, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid multipart form")
+		return
+	}
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		fail(w, http.StatusBadRequest, "INVALID_ARGUMENT", "title is required")
+		return
+	}
+	file, _, err := r.FormFile("audio")
+	if err != nil {
+		fail(w, http.StatusBadRequest, "INVALID_ARGUMENT", "audio file is required")
+		return
+	}
+	defer file.Close()
+
+	workID := store.NewID("w_")
+	dir := filepath.Join(s.cfg.MediaDir, "generated")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	dst, err := os.Create(filepath.Join(dir, workID+".wav"))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	if _, err := io.Copy(dst, file); err != nil {
+		dst.Close()
+		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	if err := dst.Close(); err != nil {
+		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	duration := 30
+	if v, convErr := strconv.Atoi(r.FormValue("duration_seconds")); convErr == nil && v > 0 && v <= 600 {
+		duration = v
+	}
+	genre := strings.TrimSpace(r.FormValue("genre"))
+	description := strings.TrimSpace(r.FormValue("description"))
+	tags := importTags(r.FormValue("tags"))
+	if len(tags) == 0 && genre != "" {
+		tags = []string{genre}
+	}
+
+	decision, reason := core.Moderate(title, description)
+	status := "published"
+	var publishedAt *time.Time
+	if decision == "reject" {
+		status = "rejected"
+	} else {
+		now := time.Now()
+		publishedAt = &now
+	}
+	createdID, err := s.store.CreateWork(r.Context(), store.CreateWorkInput{
+		TenantID: me.TenantID, UserID: me.UserID, Title: title, Cover: "c1",
+		Description: description, Visibility: "public", Status: status,
+		RejectReason: reason, Genre: genre, Tags: tags,
+		AudioURL: "/media/generated/" + workID + ".wav", Duration: duration,
+		IsAI: true, PublishedAt: publishedAt,
+	})
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	work, err := s.store.GetWork(r.Context(), createdID, me.UserID)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+	ok(w, work)
+}
+
+func importTags(raw string) []string {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '，' || r == '/' || r == ' '
+	})
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func writePage(w http.ResponseWriter, items any, offset, limit int) {
@@ -491,6 +593,15 @@ func (s *Server) createGeneration(w http.ResponseWriter, r *http.Request) {
 	}
 	gen, err := s.core.CreateGeneration(r.Context(), id.TenantID, id.UserID, req)
 	if err != nil {
+		var creditErr *core.InsufficientCreditError
+		if errors.As(err, &creditErr) {
+			write(w, http.StatusPaymentRequired, map[string]any{
+				"code":    "INSUFFICIENT_CREDIT",
+				"message": creditErr.Error(),
+				"data":    map[string]any{"required": creditErr.Required, "available": creditErr.Available},
+			})
+			return
+		}
 		fail(w, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
@@ -590,7 +701,16 @@ func (s *Server) createShareLink(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-	ok(w, map[string]any{"code": code, "url": "/api/v1/s/" + code})
+	// 分享成功即发放奖励：同一作品每天只奖励一次，重复分享返回 0。
+	reward, err := s.store.RewardShare(r.Context(), id.TenantID, id.UserID, work.ID, localDate())
+	if err != nil {
+		slog.Error("share reward failed", "user", id.UserID, "work", work.ID, "error", err)
+		reward = 0
+	}
+	ok(w, map[string]any{
+		"code": code, "url": "/api/v1/s/" + code,
+		"reward_credits": reward, "rewarded": reward > 0,
+	})
 }
 
 func (s *Server) shareLanding(w http.ResponseWriter, r *http.Request) {

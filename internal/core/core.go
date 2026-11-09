@@ -32,29 +32,14 @@ type QuoteRequest struct {
 	Stems    bool     `json:"stems"`
 }
 
+// CreditsPerSong 是调用音乐大模型生成一首歌消耗的积分（5 元 = 50 积分，按 10 积分/元换算）。
+const CreditsPerSong = 50
+
 func (c *Core) CreateQuote(ctx context.Context, tenantID, userID string, req QuoteRequest) (*model.Quote, error) {
 	if err := validateParams(req.Styles, req.Duration, req.Quality); err != nil {
 		return nil, err
 	}
-	base := 20
-	qualityFee := 0
-	if req.Quality == "高清" || req.Quality == "high" {
-		qualityFee = 8
-	}
-	stemsFee := 0
-	if req.Stems {
-		stemsFee = 4
-	}
-	durationFee := 0
-	switch req.Duration {
-	case 60:
-		durationFee = 10
-	case 90:
-		durationFee = 15
-	case 120:
-		durationFee = 20
-	}
-	return c.Store.CreateQuote(ctx, tenantID, userID, base, qualityFee, stemsFee, durationFee, req)
+	return c.Store.CreateQuote(ctx, tenantID, userID, CreditsPerSong, 0, 0, 0, req)
 }
 
 type GenerateRequest struct {
@@ -70,6 +55,16 @@ type GenerateRequest struct {
 	Title       string   `json:"title"`
 	Visibility  string   `json:"visibility"`
 	AutoPublish bool     `json:"auto_publish"`
+}
+
+// InsufficientCreditError 表示用户可用积分不足以支付一次生成。
+type InsufficientCreditError struct {
+	Required  int64
+	Available int64
+}
+
+func (e *InsufficientCreditError) Error() string {
+	return fmt.Sprintf("积分不足：生成一首歌需要 %d 积分，当前可用 %d 积分", e.Required, e.Available)
 }
 
 func (c *Core) CreateGeneration(ctx context.Context, tenantID, userID string, req GenerateRequest) (*model.Generation, error) {
@@ -103,6 +98,15 @@ func (c *Core) CreateGeneration(ctx context.Context, tenantID, userID string, re
 		return nil, errors.New("quote expired")
 	}
 
+	// 先按报价校验余额：积分不足时不创建任务，也不会调用音乐模型。
+	account, err := c.Store.Account(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if account.Available < int64(quote.Total) {
+		return nil, &InsufficientCreditError{Required: int64(quote.Total), Available: account.Available}
+	}
+
 	gen, err := c.Store.CreateGeneration(ctx, store.CreateGenerationInput{
 		TenantID: tenantID, UserID: userID, QuoteID: quote.ID,
 		Prompt: req.Prompt, Lyrics: req.Lyrics, Styles: req.Styles, Mood: req.Mood,
@@ -115,8 +119,23 @@ func (c *Core) CreateGeneration(ctx context.Context, tenantID, userID string, re
 	}
 	if err := c.Store.Reserve(ctx, gen.ID, quote.ID, tenantID, quote.Total); err != nil {
 		_ = c.Store.FailGeneration(ctx, gen.ID, "credit reservation failed")
+		if errors.Is(err, store.ErrInsufficientCredit) {
+			available := account.Available
+			if latest, aerr := c.Store.Account(ctx, tenantID); aerr == nil {
+				available = latest.Available
+			}
+			return nil, &InsufficientCreditError{Required: int64(quote.Total), Available: available}
+		}
 		return nil, err
 	}
+	// 积分冻结成功后任务才进入队列，Worker 只会领取 queued 任务。
+	if err := c.Store.QueueGeneration(ctx, gen.ID); err != nil {
+		_ = c.Store.FailGeneration(ctx, gen.ID, "queue failed")
+		_ = c.Store.Release(ctx, gen.ID, tenantID)
+		return nil, err
+	}
+	gen.Status = "queued"
+	gen.Stage = "queued"
 	return gen, nil
 }
 

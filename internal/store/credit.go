@@ -108,7 +108,7 @@ func (s *Store) Reserve(ctx context.Context, generationID, quoteID, tenantID str
 		return err
 	}
 	if available < int64(amount) {
-		return errors.New("insufficient credit")
+		return ErrInsufficientCredit
 	}
 	after := available - int64(amount)
 	if _, err := tx.ExecContext(ctx, `
@@ -226,6 +226,12 @@ func (s *Store) Release(ctx context.Context, generationID, tenantID string) erro
 	return tx.Commit()
 }
 
+// CreditsPerYuan 是充值换算比例：每 1 元获得 10 积分。
+const CreditsPerYuan int64 = 10
+
+// RechargeRewardPerYuan 是下单支付奖励：每消费 1 元额外奖励 1 积分。
+const RechargeRewardPerYuan int64 = 1
+
 func (s *Store) Recharge(ctx context.Context, tenantID, userID, packageID string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -233,15 +239,19 @@ func (s *Store) Recharge(ctx context.Context, tenantID, userID, packageID string
 	}
 	defer tx.Rollback()
 
-	var credits, price int
+	var price int
 	if err := tx.QueryRowContext(ctx, `
-		SELECT credits, price_cents FROM credit_packages WHERE id=$1`, packageID).
-		Scan(&credits, &price); err != nil {
+		SELECT price_cents FROM credit_packages WHERE id=$1`, packageID).
+		Scan(&price); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		return err
 	}
+	// 积分数量由金额决定，保证「1 元 = 10 积分」在充值链路上始终成立。
+	credits := int(int64(price) * CreditsPerYuan / 100)
+	// 下单支付奖励：每 1 元奖励 1 积分。
+	bonus := int64(price) * RechargeRewardPerYuan / 100
 	orderID := NewID("o_")
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO orders(id, tenant_id, user_id, package_id, credits, amount_cents, status)
@@ -264,6 +274,23 @@ func (s *Store) Recharge(ctx context.Context, tenantID, userID, packageID string
 		VALUES($1,$2,'recharge',$3,$4,$5,'order',$6)`,
 		NewID("cl_"), tenantID, int64(credits), available, "recharge:"+orderID, orderID); err != nil {
 		return err
+	}
+	if bonus > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE credit_accounts SET available=available+$2, updated_at=now()
+			WHERE tenant_id=$1`, tenantID, bonus); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(ctx, `
+			SELECT available FROM credit_accounts WHERE tenant_id=$1`, tenantID).Scan(&available); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO credit_ledger(id, tenant_id, entry_type, amount, balance_after, idempotency_key, ref_type, ref_id)
+			VALUES($1,$2,'recharge_bonus',$3,$4,$5,'order',$6)`,
+			NewID("cl_"), tenantID, bonus, available, "recharge_bonus:"+orderID, orderID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

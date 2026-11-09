@@ -66,13 +66,21 @@ func (s *Store) CreateGeneration(ctx context.Context, in CreateGenerationInput) 
 		INSERT INTO generations(id, tenant_id, user_id, quote_id, status, stage, progress,
 			prompt, lyrics, styles, mood, duration_seconds, vocal, quality, stems,
 			title, visibility, auto_publish, model_version)
-		VALUES($1,$2,$3,$4,'queued','queued',0,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+		VALUES($1,$2,$3,$4,'pending','pending',0,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		id, in.TenantID, in.UserID, in.QuoteID, in.Prompt, in.Lyrics, string(styles), in.Mood,
 		in.Duration, in.Vocal, in.Quality, in.Stems, in.Title, in.Visibility, in.AutoPublish, in.ModelVersion)
 	if err != nil {
 		return nil, err
 	}
 	return s.GetGeneration(ctx, id, in.UserID)
+}
+
+// QueueGeneration 在积分冻结成功后把任务置为 queued，Worker 只会领取 queued 的任务。
+func (s *Store) QueueGeneration(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE generations SET status='queued', stage='queued', updated_at=now()
+		WHERE id=$1 AND status='pending'`, id)
+	return err
 }
 
 func (s *Store) GetGeneration(ctx context.Context, id, userID string) (*model.Generation, error) {

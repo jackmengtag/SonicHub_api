@@ -83,6 +83,7 @@ func (s *Server) routes(server *rest.Server) {
 		})
 	}
 
+	add(http.MethodGet, "/", s.debugConsole)
 	add(http.MethodGet, "/health", s.health)
 	add(http.MethodGet, "/media/generated/:name", s.media)
 
@@ -115,6 +116,7 @@ func (s *Server) routes(server *rest.Server) {
 	add(http.MethodDelete, "/api/v1/works/:id", s.deleteWork)
 	add(http.MethodPut, "/api/v1/works/:id/visibility", s.setVisibility)
 	add(http.MethodPost, "/api/v1/works/:id/publish", s.publishWork)
+	add(http.MethodPost, "/api/v1/works/import", s.importWork)
 	add(http.MethodPost, "/api/v1/works/:id/like", s.likeWork)
 	add(http.MethodDelete, "/api/v1/works/:id/like", s.unlikeWork)
 	add(http.MethodPost, "/api/v1/works/:id/collect", s.collectWork)
@@ -135,6 +137,8 @@ func (s *Server) routes(server *rest.Server) {
 	add(http.MethodPost, "/api/v1/credit/recharge", s.recharge)
 	add(http.MethodGet, "/api/v1/me/credits", s.credits)
 	add(http.MethodGet, "/api/v1/me/credits/ledger", s.ledger)
+	add(http.MethodPost, "/api/v1/checkins", s.checkin)
+	add(http.MethodGet, "/api/v1/checkins/status", s.checkinStatus)
 
 	add(http.MethodPost, "/api/v1/generations", s.createGeneration)
 	add(http.MethodGet, "/api/v1/generations/:id", s.getGeneration)
@@ -252,7 +256,7 @@ func (s *Server) middleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func isPublic(method, path string) bool {
-	if path == "/health" || strings.HasPrefix(path, "/media/") {
+	if path == "/" || path == "/health" || strings.HasPrefix(path, "/media/") {
 		return true
 	}
 	if method == http.MethodPost && (path == "/api/v1/auth/login" || path == "/api/v1/auth/refresh") {

@@ -125,6 +125,20 @@ type CreditAccount struct {
 	Reserved  int64 `json:"reserved"`
 }
 
+type CheckinResult struct {
+	Date    string `json:"date"`
+	Already bool   `json:"already_checked_in"`
+	Credits int64  `json:"credits"`
+	Balance int64  `json:"balance"`
+}
+
+type CheckinStatus struct {
+	Date          string `json:"date"`
+	CheckedIn     bool   `json:"checked_in"`
+	CreditsPerDay int64  `json:"credits_per_day"`
+	Balance       int64  `json:"balance"`
+}
+
 type Quote struct {
 	ID          string    `json:"quote_id"`
 	TenantID    string    `json:"-"`
