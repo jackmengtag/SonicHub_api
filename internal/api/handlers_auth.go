@@ -23,38 +23,49 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Phone = strings.TrimSpace(req.Phone)
-	if len(req.Phone) != 11 || !strings.HasPrefix(req.Phone, "1") {
+	if !validPhone(req.Phone) {
 		fail(w, http.StatusBadRequest, "INVALID_ARGUMENT", "请输入 11 位手机号")
 		return
 	}
-	if req.Code != s.cfg.DemoCode {
-		fail(w, http.StatusUnauthorized, "UNAUTHENTICATED", "验证码错误，演示验证码为 "+s.cfg.DemoCode)
+	verified, err := s.verifyLoginCode(r.Context(), req.Phone, req.Code)
+	if err != nil {
+		fail(w, http.StatusBadGateway, "SMS_VERIFY_FAILED", err.Error())
+		return
+	}
+	if !verified {
+		message := "验证码错误或已过期"
+		if s.cfg.AllowDemoCode || s.pns == nil || !s.pns.Enabled() {
+			message = "验证码错误，演示验证码为 " + s.cfg.DemoCode
+		}
+		fail(w, http.StatusUnauthorized, "UNAUTHENTICATED", message)
 		return
 	}
 
-	u, err := s.store.FindUserByPhone(r.Context(), req.Phone)
-	if errors.Is(err, store.ErrNotFound) {
-		created, err := s.store.CreateUser(r.Context(), req.Phone, "")
-		if err != nil {
-			fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-			return
-		}
-		u = created.User
-	} else if err != nil {
-		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-		return
-	}
-	tenantID, err := s.store.TenantOf(r.Context(), u.ID)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", "tenant not found")
-		return
-	}
-	result, err := s.issueTokens(r, u, tenantID)
+	result, err := s.authenticatePhone(r, req.Phone)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
 	ok(w, result)
+}
+
+// authenticatePhone 按手机号完成登录或自动注册，并签发 Token。
+func (s *Server) authenticatePhone(r *http.Request, phone string) (map[string]any, error) {
+	u, err := s.store.FindUserByPhone(r.Context(), phone)
+	if errors.Is(err, store.ErrNotFound) {
+		created, cerr := s.store.CreateUser(r.Context(), phone, "")
+		if cerr != nil {
+			return nil, cerr
+		}
+		u = created.User
+	} else if err != nil {
+		return nil, err
+	}
+	tenantID, err := s.store.TenantOf(r.Context(), u.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.issueTokens(r, u, tenantID)
 }
 
 func (s *Server) issueTokens(r *http.Request, u *model.User, tenantID string) (map[string]any, error) {

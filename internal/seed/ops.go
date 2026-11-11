@@ -207,7 +207,7 @@ func SeedOps(ctx context.Context, db *sql.DB) error {
 
 	fallbacks := []struct {
 		id, work string
-		order     int
+		order    int
 	}{
 		{"fb_seed_1", "w_mountain", 1},
 		{"fb_seed_2", "w_night", 2},

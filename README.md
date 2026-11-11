@@ -15,7 +15,7 @@
 
 | 模块  | 能力                                     |
 | --- | -------------------------------------- |
-| 认证  | 手机号 + 验证码登录、自动注册、Refresh Token 轮换、退出登录 |
+| 认证  | 手机号 + 短信验证码登录（Dypnsapi / Dysmsapi 可切换）、App 一键登录（GetMobile 取号）、自动注册、Refresh Token 轮换、退出登录 |
 | 用户  | 个人资料、兴趣偏好、个人租户、积分账户                    |
 | 音乐人 | 认证申请、审核状态、音乐人主页、代表作                    |
 | 社交  | 关注/取消关注、粉丝、互关朋友、拉黑                     |
@@ -71,7 +71,59 @@ curl -s http://localhost:8080/api/v1/auth/login \
 
 返回 `access_token`、`refresh_token` 与用户信息。
 
-### 写歌完整链路
+配置阿里云短信后，先发送验证码再登录：
+
+```bash
+curl -s http://localhost:8080/api/v1/auth/sms/send \
+  -H 'Content-Type: application/json' \
+  -d '{"phone":"13800138000"}'
+```
+
+未配置 `ALIYUN_ACCESS_KEY_ID/SECRET` 时该接口返回演示模式提示，验证码固定为 `DEMO_AUTH_CODE`（默认 `1234`）。
+
+### App 一键登录
+
+客户端集成号码认证 Android SDK，用户同意授权后由 SDK 返回一次性的 `AccessToken`（电信 10 分钟、联通 30 分钟、移动 2 分钟），服务端换取手机号并登录：
+
+```bash
+curl -s http://localhost:8080/api/v1/auth/one-click/login \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"<SDK 返回的 AccessToken>"}'
+```
+
+成功返回与普通登录一致的 `access_token`、`refresh_token`、`user` 等；未注册手机号会自动创建账号（赠送 100 积分）。未配置阿里云密钥时返回 501 `ONE_CLICK_UNAVAILABLE`，取号失败返回 502 `ONE_CLICK_FAILED`。
+
+### 本机号码校验
+
+用于改绑手机号、支付前确认等场景：客户端 SDK 取号得到 `AccessCode`，服务端校验其与目标手机号是否一致：
+
+```bash
+curl -s http://localhost:8080/api/v1/auth/one-click/verify \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"<SDK 返回的 AccessCode>","phone":"13800138000"}'
+```
+
+返回 `{"matched":true,"result":"PASS","verify_id":"..."}`；`result` 取值 `PASS`（一致）、`REJECT`（不一致）、`UNKNOWN`（无法判断）。AccessCode 一次有效，未配置密钥时返回 501，校验失败返回 502 `MOBILE_VERIFY_FAILED`。
+
+#### Android 短信验证码 SDK（SmsAuthHelper）
+
+SDK 发送验证码需要 `BizToken + STS 临时凭证`，且验证码校验必须由服务端完成。对应两个代理接口：
+
+```bash
+# 1) TokenUpdater 回调：获取 SDK Token（package_name 为包名，sign_name 为 APK 签名）
+curl -s http://localhost:8080/api/v1/auth/sms/tokens \
+  -H 'Content-Type: application/json' \
+  -d '{"package_name":"com.example.app","sign_name":"<APK 签名>"}'
+
+# 2) 校验验证码并登录（sms_token 为 SDK 发送成功回调里的 smsVerifyToken）
+curl -s http://localhost:8080/api/v1/auth/sms/verify \
+  -H 'Content-Type: application/json' \
+  -d '{"phone":"13800138000","sms_code":"123456","sms_token":"<smsVerifyToken>"}'
+```
+
+`/auth/sms/tokens` 返回 `biz_token`、`expire_time`、`sts_access_key_id`、`sts_access_key_secret`、`sts_token`、`sms_code_expire`，客户端映射到 SDK 的 `Tokens` 对象即可；`/auth/sms/verify` 成功后返回与普通登录一致的 JWT，新手机号自动注册。方案号由服务端配置 `ALIYUN_SMS_SCENE_CODE` 下发。
+
+## 写歌完整链路
 
 ```bash
 TOKEN="<access_token>"
@@ -102,7 +154,7 @@ Worker 会生成一个可播放的 WAV，写入 `/media/generated/<generation-id
 
 | 方法          | 路径                                                                                                                     |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
-| POST        | `/api/v1/auth/login`、`/auth/refresh`、`/auth/logout`                                                                    |
+| POST        | `/api/v1/auth/login`、`/auth/sms/send`、`/auth/sms/tokens`、`/auth/sms/verify`、`/auth/one-click/login`、`/auth/one-click/verify`、`/auth/refresh`、`/auth/logout` |
 | GET/PUT     | `/api/v1/me`                                                                                                           |
 | GET         | `/api/v1/feed/recommend`、`/feed/following`、`/plaza`、`/search`                                                          |
 | POST        | `/api/v1/feed/feedback`                                                                                                |
@@ -153,7 +205,7 @@ deploy/                      Dockerfile 与 Compose
 | 任务队列 | PostgreSQL `generations` + `FOR UPDATE SKIP LOCKED` | Redis Streams + Outbox + DLQ |
 | 媒体存储 | 本地 `data/media`                                     | S3 / MinIO，签名 URL            |
 | 模型调用 | 内置 WAV 合成器模拟模型                                      | Python 音乐大模型 + Model Gateway |
-| 登录   | 固定演示验证码 `1234`                                      | 短信/第三方登录 + 风控                |
+| 登录   | 阿里云短信验证码；未配置 AccessKey 时回退演示验证码 `1234`        | 短信/第三方登录 + 风控                |
 | 支付   | 直接入账（演示）                                            | 支付渠道回调、对账、退款                 |
 | 推荐   | SQL 热度排序 + 负反馈过滤                                    | 召回/排序服务、特征平台、A/B             |
 | 消息推送 | 仅站内通知                                               | APNs / FCM / 厂商推送            |
@@ -198,4 +250,13 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 | `MIGRATIONS_DIR`       | `./migrations` | 迁移目录              |
 | `ACCESS_TOKEN_MINUTES` | `1440`         | Access Token 有效期  |
 | `REFRESH_TOKEN_DAYS`   | `30`           | Refresh Token 有效期 |
+| `ALIYUN_ACCESS_KEY_ID` | 空              | 阿里云 AccessKey ID  |
+| `ALIYUN_ACCESS_KEY_SECRET` | 空          | 阿里云 AccessKey Secret |
+| `ALIYUN_SMS_SIGN_NAME` | 空              | 短信签名（控制台赠送签名） |
+| `ALIYUN_SMS_TEMPLATE_CODE` | 空          | 短信模板 CODE |
+| `ALIYUN_SMS_SCENE_CODE` | 空             | 认证方案号（SDK Token 流程使用） |
+| `ALIYUN_SMS_TEMPLATE_PARAM` | `{"code":"##code##","min":"5"}` | 模板参数，`##code##` 由阿里云生成 |
+| `ALIYUN_SMS_SCHEME_NAME` | 空            | 方案名称，需与发送/核验保持一致 |
+| `ALIYUN_SMS_ENDPOINT`  | `dypnsapi.aliyuncs.com` | 服务接入点 |
+| `SMS_PROVIDER`         | `dypns`        | 短信通道：`dypns`=号码认证服务；`dysms`=短信服务 + 服务端自建验证码（自定义模板，60 秒频控、5 分钟有效、最多 5 次尝试） |
 

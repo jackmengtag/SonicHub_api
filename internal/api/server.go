@@ -18,6 +18,8 @@ import (
 	"github.com/jackmengtag/SonicHub_api/internal/config"
 	"github.com/jackmengtag/SonicHub_api/internal/core"
 	"github.com/jackmengtag/SonicHub_api/internal/platform/auth"
+	"github.com/jackmengtag/SonicHub_api/internal/platform/dysms"
+	"github.com/jackmengtag/SonicHub_api/internal/platform/pns"
 	"github.com/jackmengtag/SonicHub_api/internal/platform/rbac"
 	"github.com/jackmengtag/SonicHub_api/internal/store"
 )
@@ -26,10 +28,25 @@ type Server struct {
 	cfg   config.Config
 	store *store.Store
 	core  *core.Core
+	pns   *pns.Client
+	dysms *dysms.Client
 }
 
 func New(cfg config.Config, st *store.Store, c *core.Core) *Server {
-	return &Server{cfg: cfg, store: st, core: c}
+	pnsClient, err := pns.New(cfg)
+	if err != nil {
+		slog.Error("pns client init failed", "error", err)
+	}
+	dysmsClient, err := dysms.New(cfg)
+	if err != nil {
+		slog.Error("dysms client init failed", "error", err)
+	}
+	slog.Info("sms provider",
+		"provider", cfg.SMSProvider,
+		"access_key_configured", pnsClient != nil && pnsClient.Available(),
+		"sms_enabled", pnsClient != nil && pnsClient.Enabled(),
+		"dysms_enabled", dysmsClient != nil && dysmsClient.Enabled())
+	return &Server{cfg: cfg, store: st, core: c, pns: pnsClient, dysms: dysmsClient}
 }
 
 func (s *Server) Start() {
@@ -88,6 +105,11 @@ func (s *Server) routes(server *rest.Server) {
 	add(http.MethodGet, "/media/generated/:name", s.media)
 
 	add(http.MethodPost, "/api/v1/auth/login", s.login)
+	add(http.MethodPost, "/api/v1/auth/sms/send", s.sendSMSCode)
+	add(http.MethodPost, "/api/v1/auth/sms/tokens", s.smsSDKTokens)
+	add(http.MethodPost, "/api/v1/auth/sms/verify", s.smsSDKVerify)
+	add(http.MethodPost, "/api/v1/auth/one-click/login", s.oneClickLogin)
+	add(http.MethodPost, "/api/v1/auth/one-click/verify", s.verifyMobile)
 	add(http.MethodPost, "/api/v1/auth/refresh", s.refresh)
 	add(http.MethodPost, "/api/v1/auth/logout", s.logout)
 	add(http.MethodGet, "/api/v1/me", s.me)
@@ -259,7 +281,10 @@ func isPublic(method, path string) bool {
 	if path == "/" || path == "/health" || strings.HasPrefix(path, "/media/") {
 		return true
 	}
-	if method == http.MethodPost && (path == "/api/v1/auth/login" || path == "/api/v1/auth/refresh") {
+	if method == http.MethodPost && (path == "/api/v1/auth/login" || path == "/api/v1/auth/sms/send" ||
+		path == "/api/v1/auth/sms/tokens" || path == "/api/v1/auth/sms/verify" ||
+		path == "/api/v1/auth/one-click/login" || path == "/api/v1/auth/one-click/verify" ||
+		path == "/api/v1/auth/refresh") {
 		return true
 	}
 	if strings.HasPrefix(path, "/api/v1/s/") {

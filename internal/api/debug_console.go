@@ -74,8 +74,19 @@ const debugConsoleHTML = `<!DOCTYPE html>
       <input id="phone" value="13800138000">
       <label>验证码</label>
       <input id="code" value="1234">
-      <div class="row"><button id="loginBtn">登录并保存 Token</button></div>
+      <div class="row">
+        <button id="loginBtn">登录并保存 Token</button>
+        <button class="ghost" id="sendSmsBtn">发送短信验证码</button>
+      </div>
       <div class="status" id="authStatus">未登录</div>
+
+      <h2 style="margin-top:20px">一键登录（号码认证 SDK）</h2>
+      <label>SDK 返回的 AccessToken</label>
+      <input id="oneClickToken" placeholder="粘贴一键登录 SDK 回调中的 AccessToken">
+      <div class="row">
+        <button class="ghost" id="oneClickBtn">一键登录</button>
+        <button class="ghost" id="verifyMobileBtn">本机号码校验</button>
+      </div>
     </div>
 
     <div class="card">
@@ -379,6 +390,54 @@ const debugConsoleHTML = `<!DOCTYPE html>
       localStorage.setItem(TOKEN_KEY, token);
       refreshAuthStatus();
     }
+  });
+
+  document.getElementById('sendSmsBtn').addEventListener('click', async function () {
+    var phone = document.getElementById('phone').value.trim();
+    var start = Date.now();
+    var res = await fetch(origin + '/api/v1/auth/sms/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: phone })
+    });
+    var text = await res.text();
+    showResp('POST', '/api/v1/auth/sms/send', res.status, text, Date.now() - start);
+    try {
+      var payload = JSON.parse(text);
+      if (payload.data && payload.data.demo_code) {
+        document.getElementById('code').value = payload.data.demo_code;
+      }
+    } catch (e) {}
+  });
+
+  document.getElementById('verifyMobileBtn').addEventListener('click', async function () {
+    var payload = {
+      access_token: document.getElementById('oneClickToken').value.trim(),
+      phone: document.getElementById('phone').value.trim()
+    };
+    var start = Date.now();
+    var res = await fetch(origin + '/api/v1/auth/one-click/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    showResp('POST', '/api/v1/auth/one-click/verify', res.status, await res.text(), Date.now() - start);
+  });
+
+  document.getElementById('oneClickBtn').addEventListener('click', async function () {
+    var payload = { access_token: document.getElementById('oneClickToken').value.trim() };
+    var start = Date.now();
+    var res = await fetch(origin + '/api/v1/auth/one-click/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    var text = await res.text();
+    showResp('POST', '/api/v1/auth/one-click/login', res.status, text, Date.now() - start);
+    try {
+      var data = JSON.parse(text);
+      if (res.ok && data.data && data.data.access_token) {
+        token = data.data.access_token;
+        localStorage.setItem(TOKEN_KEY, token);
+        refreshAuthStatus();
+      }
+    } catch (e) {}
   });
 
   var presets = [

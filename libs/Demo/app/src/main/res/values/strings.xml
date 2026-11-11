@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="country_array">
+        <item>+86</item>
+    </string-array>
+    <string name="app_name">短信验证码Demo</string>
+</resources>

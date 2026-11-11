@@ -1,0 +1,103 @@
+
+apply plugin: 'com.android.application'
+
+
+android {
+    compileSdkVersion 30
+    buildToolsVersion "30.0.2"
+
+    defaultConfig {
+	// 客户端不应内置阿里云 AK/SK，请改调服务端 /api/v1/auth/sms/tokens 获取临时凭证
+	buildConfigField "String", "ACCESS_KEY_ID", '""'
+	buildConfigField "String", "ACCESS_KEY_SECRET", '""'
+	buildConfigField "String", "SCENE_CODE", '"SMS_339635353"'
+	buildConfigField "String", "SMS_TEMPLATE_CODE", '"SMS_339635353"'
+	buildConfigField "String", "SMS_SIGN_NAME", '"验证码短信"'
+	buildConfigField "String", "SMS_TEMPLATE_PARAM", '{"code":"${code}"}'
+
+        minSdkVersion 16
+        targetSdkVersion 30
+        versionCode 1
+        versionName "1.0"
+//        applicationId 'com.nirvana.demo.sms_verify'
+        applicationId 'com.aliqin.mytel'
+
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        consumerProguardFiles "consumer-rules.pro"
+        multiDexEnabled true
+        buildConfigField "String", "SERVER_URL", '"https://dypnsapi.aliyuncs.com/?"'
+
+    }
+    
+    signingConfigs {
+        debug {
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+            storeFile file('sig-adaptation/debug/debug.keystore')
+            storePassword 'android'
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+
+        
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            
+        }
+        noso {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            
+        }
+        debug {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            
+        }
+
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    packagingOptions {
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/DEPENDENCIES.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/notice.txt'
+        exclude 'META-INF/dependencies.txt'
+        exclude 'META-INF/LGPL2.1'
+        exclude 'META-INF/ASL2.0'
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/io.netty.versions.properties'
+    }
+    sourceSets {
+        main {
+            java.srcDirs = ['src/main/java']
+            jniLibs.srcDirs = ['libs']
+            res.srcDirs = ['src/main/res']
+        }
+    }
+}
+dependencies {
+    def isLibsMavenDep = (System.getProperty("isMaven") != null)
+
+    implementation 'androidx.appcompat:appcompat:1.0.0'
+    testImplementation 'junit:junit:4.+'
+    
+    
+    implementation(name:'sms_auth_library-1.0.4-log-online-release', ext:'aar')
+    implementation 'androidx.multidex:multidex:2.0.0'
+    implementation 'com.google.code.gson:gson:2.8.7'
+    if(!isLibsMavenDep) {
+        implementation project(path:':libs:main-release')
+        implementation project(path:':libs:logger-release')
+    }
+}

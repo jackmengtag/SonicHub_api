@@ -1,0 +1,4 @@
+include ":app"
+include ':libs:main-release'
+
+include ':libs:logger-release'
