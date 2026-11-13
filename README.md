@@ -148,7 +148,33 @@ curl -s -X POST http://localhost:8080/api/v1/works/<work_id>/publish \
   -d '{"title":"雨停之后","visibility":"public","tags":["电子","Lo-fi"]}'
 ```
 
-Worker 会生成一个可播放的 WAV，写入 `/media/generated/<generation-id>.wav`，并完成积分捕获。
+Worker 会调用远程音乐大模型生成音频，上传 COS（未配置 COS 时落到 `/media/generated/<generation-id>.wav`），并完成积分捕获。
+
+### 手机端专用接口（Android / iOS）
+
+两个接口都走 Bearer Token 鉴权，可直接给 App 调用。
+
+```bash
+TOKEN="<access_token>"
+
+# AI 写词：theme 必填，genre/mood/bpm 可选（枚举非法时自动回退 pop/peaceful/90）
+curl -s http://localhost:8080/api/v1/mobile/lyrics \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"theme":"夏天的海边","genre":"pop","mood":"happy","bpm":90}'
+# → {"code":"OK","data":{"lyrics":"[Verse 1]...","genre":"pop","mood":"happy","bpm":90}}
+
+# 一步生成音乐：自动按 50 积分报价并冻结，无需先调 /credit/quotes
+curl -s http://localhost:8080/api/v1/mobile/music \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"prompt":"夏天的海边，轻快的流行歌","lyrics":"<可选，上一步返回的歌词>","genre":"pop","mood":"happy","duration_seconds":60,"title":"夏天的海风","visibility":"public","auto_publish":true}'
+# → {"code":"OK","data":{"generation_id":"g_xxx","status":"queued","credits":50,"poll_url":"/api/v1/generations/g_xxx"}}
+
+# 轮询进度与作品（audio_url 为 COS 直链）
+curl -s http://localhost:8080/api/v1/generations/<generation_id> \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+积分不足时 `/mobile/music` 返回 `402 INSUFFICIENT_CREDIT`，`data` 中带 `required` 与 `available`；模型服务不可用时 `/mobile/lyrics` 返回 `503 MODEL_UNAVAILABLE`。
 
 ### 主要接口
 
@@ -169,6 +195,7 @@ Worker 会生成一个可播放的 WAV，写入 `/media/generated/<generation-id
 | GET/POST    | `/api/v1/checkins/status`、`/api/v1/checkins`（每日签到，赠 5 积分）                                                               |
 | GET         | `/api/v1/me/credits`、`/me/credits/ledger`、`/credit/packages`                                                           |
 | POST        | `/api/v1/generations`                                                                                                  |
+| POST        | `/api/v1/mobile/lyrics`、`/api/v1/mobile/music`（手机端：AI 写词 / 一步生成音乐）                                                  |
 | GET         | `/api/v1/generations/{id}`、`/generations/{id}/events`（SSE）                                                             |
 | GET         | `/api/v1/notifications`、`/conversations`、`/conversations/{id}/messages`                                                |
 | POST        | `/api/v1/conversations/{id}/messages`                                                                                  |
@@ -204,7 +231,7 @@ deploy/                      Dockerfile 与 Compose
 | ---- | --------------------------------------------------- | ---------------------------- |
 | 任务队列 | PostgreSQL `generations` + `FOR UPDATE SKIP LOCKED` | Redis Streams + Outbox + DLQ |
 | 媒体存储 | 本地 `data/media`                                     | S3 / MinIO，签名 URL            |
-| 模型调用 | 内置 WAV 合成器模拟模型                                      | Python 音乐大模型 + Model Gateway |
+| 模型调用 | 远程音乐大模型（`MUSIC_MODEL_URL`，同步返回音频 URL）；未配置时回退内置 WAV 合成器 | Python 音乐大模型 + Model Gateway |
 | 登录   | 阿里云短信验证码；未配置 AccessKey 时回退演示验证码 `1234`        | 短信/第三方登录 + 风控                |
 | 支付   | 直接入账（演示）                                            | 支付渠道回调、对账、退款                 |
 | 推荐   | SQL 热度排序 + 负反馈过滤                                    | 召回/排序服务、特征平台、A/B             |
@@ -234,7 +261,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 - APNs/FCM 等外部推送通道
 - 离线特征、多路召回、A/B 实验平台
 - 音乐人数据面板、歌单、话题活动、榜单、分享激励
-- 真实音乐大模型调用（当前为内置 WAV 合成器）
+- 真实音乐大模型调用（已接入 `MUSIC_MODEL_URL`，需模型服务就绪）
 
 ## 环境变量
 
@@ -259,4 +286,12 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 | `ALIYUN_SMS_SCHEME_NAME` | 空            | 方案名称，需与发送/核验保持一致 |
 | `ALIYUN_SMS_ENDPOINT`  | `dypnsapi.aliyuncs.com` | 服务接入点 |
 | `SMS_PROVIDER`         | `dypns`        | 短信通道：`dypns`=号码认证服务；`dysms`=短信服务 + 服务端自建验证码（自定义模板，60 秒频控、5 分钟有效、最多 5 次尝试） |
+| `COS_SECRET_ID` / `COS_SECRET_KEY` | 空 | 腾讯云 COS 密钥；与桶、地域一起配置后，生成完成的音频会上传到对象存储 |
+| `COS_BUCKET` | 空 | COS 存储桶，形如 `music-1406438804` |
+| `COS_REGION` | `ap-guangzhou` | COS 地域 |
+| `COS_PUBLIC_BASE` | 空 | 可选自定义/CDN 域名；留空使用 `https://<bucket>.cos.<region>.myqcloud.com` |
+| `COS_ACL` | `public-read` | 对象 ACL：`public-read` 可直接播放；`default` 沿用桶默认权限（私有桶需自行用签名 URL 访问） |
+| `MUSIC_MODEL_URL` | 空 | 远程音乐大模型同步接口地址，如 `http://119.91.65.225:8001/generate`；留空则使用内置 WAV 合成器 |
+| `MUSIC_MODEL_API_KEY` | 空 | 模型接口鉴权，非空时以 `Authorization: Bearer <key>` 发送 |
+| `MUSIC_MODEL_TIMEOUT_SECONDS` | `150` | 模型调用+音频下载超时，需小于生成任务整体超时 180 秒 |
 

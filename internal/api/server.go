@@ -167,6 +167,10 @@ func (s *Server) routes(server *rest.Server) {
 	add(http.MethodPost, "/api/v1/generations/:id/cancel", s.cancelGeneration)
 	add(http.MethodGet, "/api/v1/generations/:id/events", s.generationEvents)
 
+	// 手机端（Android / iOS）专用：AI 写词 + 一步生成音乐
+	add(http.MethodPost, "/api/v1/mobile/lyrics", s.mobileLyrics)
+	add(http.MethodPost, "/api/v1/mobile/music", s.mobileMusic)
+
 	add(http.MethodGet, "/api/v1/notifications", s.notifications)
 	add(http.MethodPost, "/api/v1/notifications/read", s.readNotifications)
 	add(http.MethodPost, "/api/v1/notifications/:id/read", s.readNotification)

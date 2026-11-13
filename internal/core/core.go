@@ -12,6 +12,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackmengtag/SonicHub_api/internal/model"
+	"github.com/jackmengtag/SonicHub_api/internal/platform/cos"
+	"github.com/jackmengtag/SonicHub_api/internal/platform/music"
 	"github.com/jackmengtag/SonicHub_api/internal/platform/storage"
 	"github.com/jackmengtag/SonicHub_api/internal/store"
 )
@@ -19,10 +21,14 @@ import (
 type Core struct {
 	Store    *store.Store
 	MediaDir string
+	// ObjectStore 把生成完成的音频上传到腾讯云 COS；未配置时为 nil，继续使用本地 /media 路径。
+	ObjectStore *cos.Client
+	// MusicModel 是远程音乐大模型；未配置时回退到本地 WAV 合成器。
+	MusicModel *music.Client
 }
 
-func New(st *store.Store, mediaDir string) *Core {
-	return &Core{Store: st, MediaDir: mediaDir}
+func New(st *store.Store, mediaDir string, objects *cos.Client, model *music.Client) *Core {
+	return &Core{Store: st, MediaDir: mediaDir, ObjectStore: objects, MusicModel: model}
 }
 
 type QuoteRequest struct {
@@ -155,11 +161,10 @@ func (c *Core) ProcessGeneration(ctx context.Context, gen *model.Generation) err
 	}
 	time.Sleep(500 * time.Millisecond)
 
-	outPath := filepath.Join(c.MediaDir, "generated", gen.ID+".wav")
-	if err := storage.GenerateDemoWAV(outPath, gen.Duration, gen.ID); err != nil {
-		return fmt.Errorf("generate audio: %w", err)
+	audioURL, err := c.produceAudio(ctx, gen)
+	if err != nil {
+		return err
 	}
-	audioURL := "/media/generated/" + gen.ID + ".wav"
 
 	title := strings.TrimSpace(gen.Title)
 	if title == "" {
@@ -208,6 +213,75 @@ func (c *Core) ProcessGeneration(ctx context.Context, gen *model.Generation) err
 	}
 	_ = c.Store.Notify(ctx, gen.UserID, "work", "", "创作完成：《"+title+"》", body, "work", workID, "gen:"+gen.ID)
 	return nil
+}
+
+// produceAudio 生成音频并返回对外地址：配置了远程音乐大模型时调用模型拿音频 URL，
+// 再下载到本地并上传 COS；未配置时回退到本地 WAV 合成器。
+func (c *Core) produceAudio(ctx context.Context, gen *model.Generation) (string, error) {
+	dir := filepath.Join(c.MediaDir, "generated")
+
+	if c.MusicModel != nil && c.MusicModel.Enabled() {
+		result, err := c.MusicModel.Generate(ctx, music.Request{
+			GenerationID:    gen.ID,
+			Prompt:          gen.Prompt,
+			Lyrics:          gen.Lyrics,
+			Styles:          gen.Styles,
+			Mood:            gen.Mood,
+			DurationSeconds: gen.Duration,
+			Vocal:           gen.Vocal,
+			Quality:         gen.Quality,
+			Title:           gen.Title,
+		})
+		if err != nil {
+			return "", fmt.Errorf("music model: %w", err)
+		}
+		slog.Info("music model returned audio", "generation", gen.ID, "audio_url", result.AudioURL)
+		localPath, err := c.MusicModel.Download(ctx, result.AudioURL, dir, gen.ID)
+		if err != nil {
+			return "", err
+		}
+		return c.PublishAudio(ctx, "music/generated/"+filepath.Base(localPath), localPath), nil
+	}
+
+	outPath := filepath.Join(dir, gen.ID+".wav")
+	if err := storage.GenerateDemoWAV(outPath, gen.Duration, gen.ID); err != nil {
+		return "", fmt.Errorf("generate audio: %w", err)
+	}
+	return c.PublishAudio(ctx, "music/generated/"+gen.ID+".wav", outPath), nil
+}
+
+// PublishAudio 返回音频的对外地址：配置了腾讯云 COS 时上传并返回 COS 链接，
+// 否则返回后端自身的 /media 路径。上传失败不影响作品生成，只记录日志并回退本地地址。
+func (c *Core) PublishAudio(ctx context.Context, key, localPath string) string {
+	localURL := "/media/generated/" + filepath.Base(localPath)
+	if c.ObjectStore == nil || !c.ObjectStore.Enabled() {
+		return localURL
+	}
+	url, err := c.ObjectStore.UploadFile(ctx, key, localPath, audioContentType(localPath))
+	if err != nil {
+		slog.Error("upload audio to cos failed", "key", key, "error", err)
+		return localURL
+	}
+	slog.Info("audio uploaded to cos", "key", key, "url", url)
+	return url
+}
+
+// audioContentType 依据扩展名推断音频 MIME，模型可能返回 mp3/flac 等格式。
+func audioContentType(localPath string) string {
+	switch strings.ToLower(filepath.Ext(localPath)) {
+	case ".mp3":
+		return "audio/mpeg"
+	case ".flac":
+		return "audio/flac"
+	case ".m4a":
+		return "audio/mp4"
+	case ".ogg":
+		return "audio/ogg"
+	case ".aac":
+		return "audio/aac"
+	default:
+		return "audio/wav"
+	}
 }
 
 type PublishRequest struct {

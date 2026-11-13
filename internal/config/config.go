@@ -32,6 +32,32 @@ type Config struct {
 	AliyunSMSSchemeName    string
 	AliyunSMSSceneCode     string
 	AliyunSMSEndpoint      string
+
+	// 腾讯云对象存储（COS）：生成完成的音频上传到桶中，未配置时仍回退到本地 /media 路径。
+	COSSecretID   string
+	COSSecretKey  string
+	COSBucket     string
+	COSRegion     string
+	COSPublicBase string
+	COSACL        string
+
+	// 远程音乐大模型：同步调用并返回音频 URL；未配置时回退本地 WAV 合成器。
+	MusicModelURL     string
+	MusicModelAPIKey  string
+	MusicModelTimeout time.Duration
+}
+
+// MusicModelEnabled 表示是否已配置远程音乐大模型地址。
+func (c Config) MusicModelEnabled() bool {
+	return strings.TrimSpace(c.MusicModelURL) != ""
+}
+
+// COSEnabled 表示是否已配置完整的腾讯云 COS 参数。
+func (c Config) COSEnabled() bool {
+	return strings.TrimSpace(c.COSSecretID) != "" &&
+		strings.TrimSpace(c.COSSecretKey) != "" &&
+		strings.TrimSpace(c.COSBucket) != "" &&
+		strings.TrimSpace(c.COSRegion) != ""
 }
 
 // SMSEnabled 表示是否已配置完整的阿里云短信认证参数。
@@ -74,6 +100,17 @@ func Load() Config {
 		AliyunSMSSchemeName:    env("ALIYUN_SMS_SCHEME_NAME", ""),
 		AliyunSMSSceneCode:     env("ALIYUN_SMS_SCENE_CODE", ""),
 		AliyunSMSEndpoint:      env("ALIYUN_SMS_ENDPOINT", "dypnsapi.aliyuncs.com"),
+
+		COSSecretID:   env("COS_SECRET_ID", ""),
+		COSSecretKey:  env("COS_SECRET_KEY", ""),
+		COSBucket:     env("COS_BUCKET", ""),
+		COSRegion:     env("COS_REGION", ""),
+		COSPublicBase: env("COS_PUBLIC_BASE", ""),
+		COSACL:        env("COS_ACL", "public-read"),
+
+		MusicModelURL:     env("MUSIC_MODEL_URL", ""),
+		MusicModelAPIKey:  env("MUSIC_MODEL_API_KEY", ""),
+		MusicModelTimeout: time.Duration(envInt("MUSIC_MODEL_TIMEOUT_SECONDS", 150)) * time.Second,
 	}
 }
 

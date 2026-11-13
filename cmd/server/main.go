@@ -12,7 +12,9 @@ import (
 	"github.com/jackmengtag/SonicHub_api/internal/api"
 	"github.com/jackmengtag/SonicHub_api/internal/config"
 	"github.com/jackmengtag/SonicHub_api/internal/core"
+	"github.com/jackmengtag/SonicHub_api/internal/platform/cos"
 	"github.com/jackmengtag/SonicHub_api/internal/platform/db"
+	"github.com/jackmengtag/SonicHub_api/internal/platform/music"
 	"github.com/jackmengtag/SonicHub_api/internal/seed"
 	"github.com/jackmengtag/SonicHub_api/internal/store"
 	"github.com/jackmengtag/SonicHub_api/internal/worker"
@@ -58,7 +60,15 @@ func main() {
 	}
 
 	st := store.New(database)
-	svc := core.New(st, cfg.MediaDir)
+	objects, err := cos.New(cfg)
+	if err != nil {
+		slog.Error("cos client init failed", "error", err)
+	}
+	slog.Info("object storage",
+		"bucket", cfg.COSBucket, "region", cfg.COSRegion, "enabled", objects != nil && objects.Enabled())
+	model := music.New(cfg)
+	slog.Info("music model", "endpoint", cfg.MusicModelURL, "enabled", model.Enabled())
+	svc := core.New(st, cfg.MediaDir, objects, model)
 	go (&worker.Worker{Core: svc}).Run(ctx)
 
 	api.New(cfg, st, svc).Start()

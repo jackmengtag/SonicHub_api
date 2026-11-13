@@ -37,7 +37,8 @@ func (w *Worker) processOne(parent context.Context) {
 	if gen == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(parent, 3*time.Minute)
+	// 音乐大模型生成一首 15 秒歌约 40-60 秒，长歌更久，超时留足余量避免误杀任务。
+	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 	if err := w.Core.ProcessGeneration(ctx, gen); err != nil {
 		slog.Error("process generation", "id", gen.ID, "error", err)

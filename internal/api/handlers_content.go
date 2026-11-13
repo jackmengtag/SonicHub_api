@@ -93,7 +93,8 @@ func (s *Server) importWork(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
 	}
-	dst, err := os.Create(filepath.Join(dir, workID+".wav"))
+	dstPath := filepath.Join(dir, workID+".wav")
+	dst, err := os.Create(dstPath)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
@@ -132,8 +133,8 @@ func (s *Server) importWork(w http.ResponseWriter, r *http.Request) {
 		TenantID: me.TenantID, UserID: me.UserID, Title: title, Cover: "c1",
 		Description: description, Visibility: "public", Status: status,
 		RejectReason: reason, Genre: genre, Tags: tags,
-		AudioURL: "/media/generated/" + workID + ".wav", Duration: duration,
-		IsAI: true, PublishedAt: publishedAt,
+		AudioURL: s.core.PublishAudio(r.Context(), "music/generated/"+workID+".wav", dstPath),
+		Duration: duration, IsAI: true, PublishedAt: publishedAt,
 	})
 	if err != nil {
 		fail(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
